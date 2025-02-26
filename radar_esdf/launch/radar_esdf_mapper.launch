@@ -1,0 +1,12 @@
+<launch>
+  <node name="radar_esdf_mapper" pkg="radar_esdf" type="radar_esdf_mapper" output="screen">
+    <!-- <param name="max_range" type="double" value="50.0" />  
+    <param name="max_distance" type="double" value="5.0" />  
+    <param name="voxel_size" type="double" value="0.5" />   -->
+
+    <!-- <remap from="/radar/points" to="/radar/points" />  
+    <remap from="/esdf_cloud" to="/esdf_cloud" />   -->
+    
+  </node>
+  
+</launch>
