@@ -40,6 +40,3 @@ source devel/setup.bash
 # Launch mapping node (require radar connection)
 roslaunch radar_esdf radar_esdf_mapper.launch 
 ```
-
-
-![ESDF Visualization](docs/esdf_demo.gif)
