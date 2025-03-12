@@ -11,17 +11,21 @@
 #include <voxblox/core/layer.h>
 #include <voxblox/core/voxel.h>
 
+voxblox::TsdfIntegratorBase::Config integrator_config;
+voxblox::EsdfMap::Config esdf_config;
+voxblox::TsdfMap::Config tsdf_config;
+    
 class RadarEsdfMapper {
 public:
   RadarEsdfMapper() 
     : nh_("~"),
-      esdf_server_(nh_,nh_),
-      tf_listener_(tf_buffer_) 
+    esdf_server_(nh_, nh_, esdf_config, voxblox::EsdfIntegrator::Config(), tsdf_config, integrator_config, voxblox::MeshIntegratorConfig()),
+      tf_listener_(tf_buffer_)
   {
     // 初始化参数
     max_range_ = 1500.0;  // 局部地图最大范围
-    max_distance_ = 10.0;  // ESDF最大距离
-    voxel_size_ = 3.0;  // 体素大小
+    max_distance_ = 15.0;  // ESDF最大距离
+    voxel_size_ = 1.5;  // 体素大小
 
     // 设置平移为 (0, 0, 0)
     transform.transform.translation.x = 0.0;
@@ -34,15 +38,12 @@ public:
     transform.transform.rotation.z = 0.0;
     transform.transform.rotation.w = 1.0;
 
+
     // 配置ESDF服务器
     esdf_server_.setTraversabilityRadius(1.2);  //机器人或无人机半径
     esdf_server_.setClearSphere(true);
     esdf_server_.setEsdfMaxDistance(max_distance_);
 
-    integrator_config.voxel_carving_enabled = true;
-    integrator_config.max_ray_length_m = max_range_;
-
-    integrator_config.default_truncation_distance = max_distance_;
     tsdf_integrator_ = std::make_shared<voxblox::SimpleTsdfIntegrator>(
         integrator_config, 
         esdf_server_.getTsdfMapPtr()->getTsdfLayerPtr()
@@ -51,7 +52,7 @@ public:
     if (publish_esdf_) {
       //esdf_server_.setPublishEsdf(true);
       esdf_server_.setPublishSlices(true);
-      esdf_server_.setSliceLevel(2.0);  // 发布高度0.5米的2D切片
+      esdf_server_.setSliceLevel(0.05);  // 发布高度0.5米的2D切片
     }
 
     // 订阅雷达点云 /points_raw /PointCloudDetection
@@ -103,19 +104,6 @@ private:
     }
 
 
-    // 5. 将点云插入TSDF地图
-    // voxblox::TsdfIntegratorBase::Config integrator_config;
-    // integrator_config.voxel_carving_enabled = true;
-    // integrator_config.max_ray_length_m = max_range_;
-    // integrator_config.default_truncation_distance = max_distance_;
-    
-    // auto tsdf_integrator = std::make_shared<voxblox::SimpleTsdfIntegrator>(
-    //         integrator_config, 
-    //         esdf_server_.getTsdfMapPtr()->getTsdfLayerPtr());
-
-    // auto tsdf_integrator = std::make_shared<voxblox::MergedTsdfIntegrator>(
-    //     integrator_config, 
-    //     esdf_server_.getTsdfMapPtr()->getTsdfLayerPtr());
 
     tsdf_integrator_->integratePointCloud(voxblox::Transformation(),
                                         voxblox_points,
@@ -127,87 +115,9 @@ private:
     esdf_server_.publishPointclouds();
     esdf_server_.publishSlices();
 
-    // 7. 生成并发布ESDF点云
-    //generateEsdfPointcloud();
+    
   }
 
-//   void generateEsdfPointcloud() 
-//   {
-//     pcl::PointCloud<pcl::PointXYZI> esdf_cloud;
-//     const auto& esdf_layer = esdf_server_.getEsdfMapPtr()->getEsdfLayer();
-
-//     // 检查 ESDF 层是否有效
-//     if (!esdf_server_.getEsdfMapPtr() || esdf_layer.getNumberOfAllocatedBlocks() == 0) {
-//         ROS_ERROR("ESDF layer is not initialized or empty!");
-//         return;
-//     }
-
-//     voxblox::BlockIndexList block_indices;
-//     esdf_layer.getAllAllocatedBlocks(&block_indices);
-
-//     for (const auto& block_index : block_indices) {
-//         const auto block = esdf_layer.getBlockPtrByIndex(block_index);
-//         if (!block) {
-//             ROS_WARN("Block at index (%ld, %ld, %ld) is null!", block_index.x(), block_index.y(), block_index.z());
-//             continue;
-//         }
-
-//         for (int x = 0; x < block->num_voxels(); ++x) {
-//             for (int y = 0; y < block->num_voxels(); ++y) {
-//                 for (int z = 0; z < block->num_voxels(); ++z) {
-//                     // 检查索引范围
-//                     if (x < 0 || x >= block->num_voxels() ||
-//                         y < 0 || y >= block->num_voxels() ||
-//                         z < 0 || z >= block->num_voxels()) {
-//                         ROS_ERROR("Voxel index out of bounds: (%d, %d, %d)", x, y, z);
-//                         continue;
-//                     }
-
-//                     const auto& voxel = block->getVoxelByVoxelIndex(voxblox::VoxelIndex(x, y, z));
-//                     if (!voxel.observed) {
-//                         continue;  // 跳过未观测的体素
-//                     }
-
-//                     if (std::abs(voxel.distance) < max_distance_) 
-//                     {
-//                         const auto position = block->computeCoordinatesFromVoxelIndex(
-//                             voxblox::VoxelIndex(x, y, z));
-
-//                         // 检查坐标是否有效
-//                         if (std::isnan(position.x()) || std::isnan(position.y()) || std::isnan(position.z())) {
-//                             ROS_ERROR("Invalid coordinates computed for voxel index (%d, %d, %d)", x, y, z);
-//                             continue;
-//                         }
-
-//                         pcl::PointXYZI point;
-//                         point.x = position.x();
-//                         point.y = position.y();
-//                         point.z = position.z();
-//                         point.intensity = voxel.distance;
-//                         esdf_cloud.push_back(point);
-//                     }
-//                     else
-//                     {
-//                       continue;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     // 检查发布者是否有效
-//     if (!esdf_pub_) {
-//         ROS_ERROR("ESDF point cloud publisher is not initialized!");
-//         return;
-//     }
-
-//     // 转换为ROS消息并发布
-//     sensor_msgs::PointCloud2 output;
-//     pcl::toROSMsg(esdf_cloud, output);
-//     output.header.frame_id = "radar";
-//     output.header.stamp = ros::Time::now();
-//     esdf_pub_.publish(output);
-// }
 
   
 
@@ -217,9 +127,8 @@ private:
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
   voxblox::EsdfServer esdf_server_;
-  std::shared_ptr<voxblox::SimpleTsdfIntegrator> tsdf_integrator_;
-  voxblox::TsdfIntegratorBase::Config integrator_config;
   geometry_msgs::TransformStamped transform;
+  std::shared_ptr<voxblox::SimpleTsdfIntegrator> tsdf_integrator_;
   bool publish_esdf_;
   bool publish_slices_;
   
@@ -229,48 +138,25 @@ private:
   float voxel_size_;     // 体素大小
 };
 
+void fuzhi()
+{
+    
+    esdf_config.esdf_voxel_size = 10.0;  //设置分辨率
+    
+    tsdf_config.tsdf_voxel_size = 10.0;  //设置分辨率
+
+    integrator_config.voxel_carving_enabled = true;
+    integrator_config.max_ray_length_m = 1500;
+
+    integrator_config.default_truncation_distance = 15;
+    return;
+}
+
 int main(int argc, char** argv) {
   ros::init(argc, argv, "radar_esdf_mapper");
+  fuzhi();
   RadarEsdfMapper mapper;
   ros::spin();
   return 0;
 }
 
-// void generateEsdfPointcloud() {
-  //   pcl::PointCloud<pcl::PointXYZI> esdf_cloud;
-  //   const auto& esdf_layer = esdf_server_.getEsdfMapPtr()->getEsdfLayer();
-
-  //   voxblox::BlockIndexList block_indices;
-  //   esdf_layer.getAllAllocatedBlocks(&block_indices);
-
-  //   for (const auto& block_index : block_indices) {
-  //     const auto block = esdf_layer.getBlockPtrByIndex(block_index);
-  //     if (!block) continue;
-
-  //     for (int x = 0; x < block->num_voxels(); ++x) {
-  //       for (int y = 0; y < block->num_voxels(); ++y) {
-  //         for (int z = 0; z < block->num_voxels(); ++z) {
-  //           const auto& voxel = block->getVoxelByVoxelIndex(voxblox::VoxelIndex(x, y, z));   // ?voxelIndex
-  //           if (voxel.observed && std::abs(voxel.distance) < max_distance_) {
-  //             const auto position = block->computeCoordinatesFromVoxelIndex(
-  //                 voxblox::VoxelIndex(x, y, z));
-              
-  //             pcl::PointXYZI point;
-  //             point.x = position.x();
-  //             point.y = position.y();
-  //             point.z = position.z();
-  //             point.intensity = voxel.distance;
-  //             esdf_cloud.push_back(point);
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-
-  //   // 转换为ROS消息并发布
-  //   sensor_msgs::PointCloud2 output;
-  //   pcl::toROSMsg(esdf_cloud, output);
-  //   output.header.frame_id = "radar";
-  //   output.header.stamp = ros::Time::now();
-  //   esdf_pub_.publish(output);
-  // }
