@@ -97,7 +97,7 @@ private:
     // ROS_INFO_STREAM("[Performance] ESDF update time: " << esdf_duration << " ms");
 
     esdf_server_.publishPointclouds();
-    esdf_server_.publishSlices();
+    //esdf_server_.publishSlices();
 }
 
 
